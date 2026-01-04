@@ -68,8 +68,26 @@ func processEpub(inputPath, outputPath, apiKey, apiUrl, model string) error {
 	writer := zip.NewWriter(outputFile)
 	defer writer.Close()
 
+	numberOfXml := 0
+	xmlIndex := 0
+
 	for _, file := range reader.File {
+		ext := strings.ToLower(filepath.Ext(file.Name))
+		if ext == ".xhtml" || ext == ".html" {
+			numberOfXml++
+		}
+	}
+
+	for _, file := range reader.File {
+		ext := strings.ToLower(filepath.Ext(file.Name))
+
+		if ext == ".xhtml" || ext == ".html" {
+			xmlIndex++
+			log.Printf("Translating %s... (%v/%v)", file.Name, xmlIndex, numberOfXml)
+		}
+
 		err := processFile(file, writer, apiKey, apiUrl, model)
+
 		if err != nil {
 			return fmt.Errorf("error processing file %s: %w", file.Name, err)
 		}
@@ -92,7 +110,6 @@ func processFile(file *zip.File, writer *zip.Writer, apiKey, apiUrl, model strin
 
 	ext := strings.ToLower(filepath.Ext(file.Name))
 	if ext == ".xhtml" || ext == ".html" {
-		log.Printf("Translating %s...", file.Name)
 		return translateHTML(rc, w, apiKey, apiUrl, model)
 	}
 
