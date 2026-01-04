@@ -12,3 +12,6 @@
 
 # build
 epub-translator
+
+input.epub
+output.epub
