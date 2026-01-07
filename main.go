@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/joho/godotenv"
@@ -32,6 +33,11 @@ func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	apiUrl := os.Getenv("GEMINI_API_URL")
 	model := os.Getenv("GEMINI_MODEL")
+	targetLang := os.Getenv("TARGET_LANGUAGE")
+
+	if targetLang == "" {
+		targetLang = "German" // My personal Fallback
+	}
 
 	if apiKey == "" || apiUrl == "" || model == "" {
 		log.Fatal("GEMINI_API_KEY, GEMINI_API_URL, and GEMINI_MODEL must be set")
@@ -42,9 +48,10 @@ func main() {
 	}
 
 	inputPath := os.Args[1]
-	outputPath := "output.epub"
+	timestamp := time.Now().Format("20060102-1504")
+	outputPath := fmt.Sprintf("translated-%s-%s", timestamp, inputPath)
 
-	err := processEpub(inputPath, outputPath, apiKey, apiUrl, model)
+	err := processEpub(inputPath, outputPath, apiKey, apiUrl, model, targetLang)
 	if err != nil {
 		log.Fatalf("Error processing epub: %v", err)
 	}
@@ -52,7 +59,7 @@ func main() {
 	fmt.Printf("Successfully translated EPUB to %s\n", outputPath)
 }
 
-func processEpub(inputPath, outputPath, apiKey, apiUrl, model string) error {
+func processEpub(inputPath, outputPath, apiKey, apiUrl, model string, targetLang string) error {
 	reader, err := zip.OpenReader(inputPath)
 	if err != nil {
 		return fmt.Errorf("could not open input epub: %w", err)
@@ -86,7 +93,7 @@ func processEpub(inputPath, outputPath, apiKey, apiUrl, model string) error {
 			log.Printf("Translating %s... (%v/%v)", file.Name, xmlIndex, numberOfXml)
 		}
 
-		err := processFile(file, writer, apiKey, apiUrl, model)
+		err := processFile(file, writer, apiKey, apiUrl, model, targetLang)
 
 		if err != nil {
 			return fmt.Errorf("error processing file %s: %w", file.Name, err)
@@ -96,7 +103,7 @@ func processEpub(inputPath, outputPath, apiKey, apiUrl, model string) error {
 	return nil
 }
 
-func processFile(file *zip.File, writer *zip.Writer, apiKey, apiUrl, model string) error {
+func processFile(file *zip.File, writer *zip.Writer, apiKey, apiUrl, model string, targetLang string) error {
 	rc, err := file.Open()
 	if err != nil {
 		return err
@@ -110,14 +117,14 @@ func processFile(file *zip.File, writer *zip.Writer, apiKey, apiUrl, model strin
 
 	ext := strings.ToLower(filepath.Ext(file.Name))
 	if ext == ".xhtml" || ext == ".html" {
-		return translateHTML(rc, w, apiKey, apiUrl, model)
+		return translateHTML(rc, w, apiKey, apiUrl, model, targetLang)
 	}
 
 	_, err = io.Copy(w, rc)
 	return err
 }
 
-func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string) error {
+func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string, targetLang string) error {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return err
@@ -136,7 +143,7 @@ func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string) error
 			return
 		}
 
-		translated := translateNode(inner, apiKey, apiUrl, model)
+		translated := translateNode(inner, apiKey, apiUrl, model, targetLang)
 		s.SetHtml(translated)
 	})
 
@@ -149,46 +156,58 @@ func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string) error
 	return err
 }
 
-func translateNode(htmlContent, key, url, model string) string {
+func translateNode(htmlContent, key, url, model string, targetLang string) string {
+	maxRetries := 3
+	// Start delay for retries (will increase exponentially)
+	retryDelay := 2 * time.Second
+
+	systemPrompt := fmt.Sprintf("You are a professional translator. Translate to %s. Keep all HTML tags exactly as they are. Output ONLY the translated content.", targetLang)
 	payload := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are a professional translator. Translate to German. Keep all HTML tags exactly as they are. Output ONLY the translated content."},
+			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": htmlContent},
 		},
 	}
-
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 
-	if err != nil {
-		return htmlContent
+	for i := 0; i <= maxRetries; i++ {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+		if err != nil {
+			return htmlContent
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+
+		if err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			respBody, _ := io.ReadAll(resp.Body)
+			var openAIResp OpenAIResponse
+			if err := json.Unmarshal(respBody, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
+				return strings.TrimSpace(openAIResp.Choices[0].Message.Content)
+			}
+		}
+
+		if i < maxRetries {
+			statusInfo := "network error"
+			if resp != nil {
+				statusInfo = fmt.Sprintf("status %d", resp.StatusCode)
+				resp.Body.Close()
+			}
+
+			log.Printf("  -> Translation failed (%s). Retry %d/%d in %v...", statusInfo, i+1, maxRetries, retryDelay)
+			time.Sleep(retryDelay)
+			retryDelay *= 2 // Exponential backoff: 2s, 4s, 8s
+			continue
+		}
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
+	// Final fallback if all retries failed
+	log.Printf("All retries failed for a block. Keeping original text.")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-
-	if err != nil {
-		log.Printf("Error calling API: %v", err)
-		return htmlContent
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("API returned non-OK status: %d", resp.StatusCode)
-		return htmlContent
-	}
-
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	var openAIResp OpenAIResponse
-
-	if err := json.Unmarshal(respBody, &openAIResp); err != nil || len(openAIResp.Choices) == 0 {
-		return htmlContent
-	}
-
-	return strings.TrimSpace(openAIResp.Choices[0].Message.Content)
+	return htmlContent + " <span style='color: gray; font-size: 0.8em;'>(⚠️ Translation failed)</span>"
 }
