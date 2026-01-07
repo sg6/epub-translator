@@ -47,9 +47,12 @@ func main() {
 		log.Fatal("Usage: epub-translator <input.epub>")
 	}
 
+	log.Printf("Starting translation with model: %s, target language: %s", model, targetLang)
+
 	inputPath := os.Args[1]
 	timestamp := time.Now().Format("20060102-1504")
-	outputPath := fmt.Sprintf("translated-%s-%s", timestamp, inputPath)
+	inputFilename := filepath.Base(inputPath)
+	outputPath := fmt.Sprintf("translated-%s-%s", timestamp, inputFilename)
 
 	err := processEpub(inputPath, outputPath, apiKey, apiUrl, model, targetLang)
 	if err != nil {
@@ -84,6 +87,8 @@ func processEpub(inputPath, outputPath, apiKey, apiUrl, model string, targetLang
 			numberOfXml++
 		}
 	}
+
+	log.Printf("Found %d HTML/XHTML files to translate.", numberOfXml)
 
 	for _, file := range reader.File {
 		ext := strings.ToLower(filepath.Ext(file.Name))
@@ -131,7 +136,10 @@ func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string, targe
 	}
 
 	// Tags to translate
-	doc.Find("p, h1, h2, h3, h4, h5, h6, li, span").Each(func(i int, s *goquery.Selection) {
+	selection := doc.Find("p, h1, h2, h3, h4, h5, h6, li, span")
+	log.Printf("  -> Found %d translatable nodes", selection.Length())
+
+	selection.Each(func(i int, s *goquery.Selection) {
 		// Only translate if there's text and it's not just whitespace
 		if strings.TrimSpace(s.Text()) == "" {
 			return
@@ -145,6 +153,9 @@ func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string, targe
 
 		translated := translateNode(inner, apiKey, apiUrl, model, targetLang)
 		s.SetHtml(translated)
+
+		// Add a small delay to avoid hitting rate limits too quickly
+		time.Sleep(200 * time.Millisecond)
 	})
 
 	htmlStr, err := doc.Html()
@@ -157,9 +168,10 @@ func translateHTML(r io.Reader, w io.Writer, apiKey, apiUrl, model string, targe
 }
 
 func translateNode(htmlContent, key, url, model string, targetLang string) string {
-	maxRetries := 3
+	maxRetries := 5
+
 	// Start delay for retries (will increase exponentially)
-	retryDelay := 2 * time.Second
+	retryDelay := 5 * time.Second
 
 	systemPrompt := fmt.Sprintf("You are a professional translator. Translate to %s. Keep all HTML tags exactly as they are. Output ONLY the translated content.", targetLang)
 	payload := map[string]interface{}{
@@ -173,7 +185,9 @@ func translateNode(htmlContent, key, url, model string, targetLang string) strin
 
 	for i := 0; i <= maxRetries; i++ {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+
 		if err != nil {
+			log.Printf("  -> Error creating request: %v", err)
 			return htmlContent
 		}
 
@@ -196,12 +210,21 @@ func translateNode(htmlContent, key, url, model string, targetLang string) strin
 			statusInfo := "network error"
 			if resp != nil {
 				statusInfo = fmt.Sprintf("status %d", resp.StatusCode)
+				respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+				if len(respBody) > 0 {
+					statusInfo += " - " + string(respBody)
+				}
 				resp.Body.Close()
 			}
 
 			log.Printf("  -> Translation failed (%s). Retry %d/%d in %v...", statusInfo, i+1, maxRetries, retryDelay)
 			time.Sleep(retryDelay)
-			retryDelay *= 2 // Exponential backoff: 2s, 4s, 8s
+
+			if resp != nil && resp.StatusCode == 429 {
+				retryDelay *= 3
+			} else {
+				retryDelay *= 2
+			}
 			continue
 		}
 	}
