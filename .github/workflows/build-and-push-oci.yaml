@@ -13,5 +13,5 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and Push OCI Image
         run: |
-          docker build -t ghcr.io/sg6/epub-translator:latest -f Containerfile
+          docker build -t ghcr.io/sg6/epub-translator:latest -f Containerfile .
           docker push ghcr.io/sg6/epub-translator:latest
