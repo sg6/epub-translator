@@ -20,6 +20,14 @@ It was developed with modern AI-assisted coding workflows to create a seamless b
 
 ## Setup & Usage
 
+You will need a Google Gemini API Key to use this tool. As soon as you have one, you can choose between three ways to run it:
+
+1. Run it directly from your terminal (requires Docker or Podman)
+2. Build it locally with Go (requires Git + Go 1.24+)
+3. Build it locally with Docker / OCI (requires Git + Docker or Podman)
+
+For further instructions, see below
+
 ### No installation required
 
 1. Create a file called .env in any directory (you can also use another name for that file, just make sure to update the command below accordingly)
@@ -34,10 +42,12 @@ It was developed with modern AI-assisted coding workflows to create a seamless b
 3. Run the command below from this directory, replacing `my-epub-file.epub` with the path to your EPUB file.
 
 4. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
+   The output will be available as `translated-{ebook-name}.epub`
 
 `docker run --rm --env-file .env -v "$(pwd):/data" -w /data ghcr.io/sg6/epub-translator my-epub-file.epub`
 
 ### Local Build with Go
+
 1. **Clone the repository:**
     ```bash
     git clone https://github.com/sg6/epub-translator.git
@@ -54,8 +64,9 @@ It was developed with modern AI-assisted coding workflows to create a seamless b
     ```bash
     go run main.go path/to/your/book.epub
     ```
-5. 
-6. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
+
+5. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
+   The output will be available as `translated-{ebook-name}.epub`
 
 ### Local Build with Docker / OCI
 
@@ -82,7 +93,8 @@ If you don't want to install Go, but still build it on your own, you can use any
      epub-translator path/to/your/book.epub
    ```
 
-3. The output is available as `translated-{ebook-name}.epub`
+3. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
+   The output will be available as `translated-{ebook-name}.epub`
 
 ## Requirements
 - Go 1.24+
