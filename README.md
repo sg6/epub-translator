@@ -20,50 +20,69 @@ It was developed with modern AI-assisted coding workflows to create a seamless b
 
 ## Setup & Usage
 
-### Local Installation
-1. **Clone the repository:**
-```bash
-git clone https://github.com/sg6/epub-translator.git
-cd epub-translator
-```
+### No installation required
 
+1. Create a file called .env in any directory (you can also use another name for that file, just make sure to update the command below accordingly)
+
+2. Add the following content and replace the values accordingly: (see also the example.env file in this repository)
+    ```
+    GEMINI_API_KEY=xxx
+    GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+    GEMINI_MODEL=gemini-2.0-flash
+    TARGET_LANGUAGE=German
+    ```
+3. Run the command below from this directory, replacing `my-epub-file.epub` with the path to your EPUB file.
+
+4. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
+
+`docker run --rm --env-file .env -v "$(pwd):/data" -w /data ghcr.io/sg6/epub-translator my-epub-file.epub`
+
+### Local Build with Go
+1. **Clone the repository:**
+    ```bash
+    git clone https://github.com/sg6/epub-translator.git
+    cd epub-translator
+    ```
 2. **Environment Variables:** Copy `example.env` to `.env` and fill in your API key.
 
 3. **Install dependencies:**
-```bash
-go mod tidy
-```
+    ```bash
+    go mod tidy
+    ```
 
 4. **Run:**
-```bash
-go run main.go path/to/your/book.epub
-```
+    ```bash
+    go run main.go path/to/your/book.epub
+    ```
+5. 
+6. Wait, just wait ... it might take up to an hour (or even longer) until it's finished. But it's worth it!
 
-### Docker / OCI Image
-If you don't want to install Go, you can use Docker.
+### Local Build with Docker / OCI
+
+If you don't want to install Go, but still build it on your own, you can use any OCI-compatible container engine like Docker or Podman.
 
 1. **Build the image:**
-```bash
-docker build -t epub-translator -f Containerfile .
-```
-
+    ```bash
+    docker build -t epub-translator -f Containerfile .
+    ```
 2. **Run the container:**
-Pass your `.env` file and mount the directory containing your EPUB files. This command removes the container after execution (`--rm`).
+   
+   Pass your `.env` file and mount the directory containing your EPUB files. This command removes the container after execution (`--rm`).
 
-On Linux, to ensure the output file has the correct permissions, it's recommended to run the container with the current user's UID and GID.
+   On Linux, to ensure the output file has the correct permissions, it's recommended to run the container with the current user's UID and GID.
 
-You can also remove the `-v "$(pwd):/data"` part.
+   You can also remove the `-v "$(pwd):/data"` part.
 
-```bash
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --env-file .env \
-  -v "$(pwd):/data" \
-  -w /data \
-  epub-translator path/to/your/book.epub
-```
+   ```bash
+   docker run --rm \
+     --user "$(id -u):$(id -g)" \
+     --env-file .env \
+     -v "$(pwd):/data" \
+     -w /data \
+     epub-translator path/to/your/book.epub
+   ```
 
-5. The output is available as `translated-{ebook-name}.epub`
+3. The output is available as `translated-{ebook-name}.epub`
 
 ## Requirements
 - Go 1.24+
