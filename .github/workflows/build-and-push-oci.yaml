@@ -2,7 +2,7 @@ name: Build and Push OCI
 run-name: build-and-push-oci
 on: ['push']
 jobs:
-  build:
+  build-and-push:
     permissions: write-all
     runs-on: ubuntu-24.04
     steps:
